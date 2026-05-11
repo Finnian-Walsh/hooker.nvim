@@ -127,6 +127,9 @@ function M.save()
 	end
 
 	hooker_file:write(result)
+	hooker_file:close()
+
+	written_hooks = result
 end
 
 function M.fetch_files()
@@ -138,14 +141,14 @@ function M.fetch_files()
 
 	local ok, result = pcall(vim.json.decode, hooker_file:read("*a"))
 
+	hooker_file:close()
+
 	if not ok then
-		vim.notify(result, vim.log.levels.ERROR)
-		return
+		error(result)
 	end
 
 	if type(result) ~= "table" then
 		error("JSON has incorrect format")
-		return
 	end
 
 	return result
