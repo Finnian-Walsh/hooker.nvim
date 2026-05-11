@@ -29,7 +29,13 @@ function M.dump_data()
 end
 
 function M.select(index)
-	local file_name = written_hooks[index]
+	local file_name
+
+	if vim.api.nvim_buf_is_valid(hooker_buffer) then
+		file_name = vim.api.nvim_buf_get_lines(hooker_buffer, index - 1, index, true)[1]
+	else
+		file_name = written_hooks[index]
+	end
 
 	if file_name:match("/$") then
 		M.options.open_directory(file_name)
