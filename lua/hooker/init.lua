@@ -1,7 +1,9 @@
 local M = {}
 
-local written_hooks = {}
+local written_hooks
 local hooker_buffer, hooker_win = -1, -1
+
+local separator = package.config:sub(1, 1)
 
 local default_options = {
 	lines = 8,
@@ -28,6 +30,32 @@ function M.dump_data()
 	vim.print(hooker_buffer, hooker_win)
 end
 
+function M.sync_written_hooks()
+	local hooker_file = io.open(".hooker.json", "r")
+
+	if not hooker_file then
+		return {}
+	end
+
+	local ok, result = pcall(vim.json.decode, hooker_file:read("*a"))
+
+	hooker_file:close()
+
+	if not ok then
+		error(result)
+	end
+
+	if type(result) ~= "table" then
+		error("JSON has incorrect format")
+	end
+
+	written_hooks = result
+end
+
+function M.length()
+	return #written_hooks
+end
+
 function M.select(index)
 	local file_name
 
@@ -37,7 +65,11 @@ function M.select(index)
 		file_name = written_hooks[index]
 	end
 
-	if file_name:match("/$") then
+	if not file_name then
+		vim.notify(string.format("No file name\nIndex: `%s`", index), vim.log.levels.WARNING)
+	end
+
+	if file_name:sub(-1) == separator then
 		M.options.open_directory(file_name)
 	else
 		vim.cmd.edit(file_name)
@@ -49,7 +81,7 @@ function M.menu()
 		vim.api.nvim_win_close(hooker_win)
 	end
 
-	written_hooks = M.fetch_files()
+	M.sync_written_hooks()
 
 	local opts = M.options
 	local buf = vim.api.nvim_create_buf(false, true)
@@ -114,6 +146,16 @@ function M.save()
 		hooks[i] = nil
 	end
 
+	for i, hook in ipairs(hooks) do
+		if hook:sub(-1) ~= separator then
+			local file_data = vim.uv.fs_stat(hook)
+
+			if file_data and file_data.type == "directory" then
+				hooks[i] = hook .. separator
+			end
+		end
+	end
+
 	if list_shallow_equal(hooks, written_hooks) then
 		return
 	end
@@ -138,30 +180,8 @@ function M.save()
 	written_hooks = result
 end
 
-function M.fetch_files()
-	local hooker_file = io.open(".hooker.json", "r")
-
-	if not hooker_file then
-		return {}
-	end
-
-	local ok, result = pcall(vim.json.decode, hooker_file:read("*a"))
-
-	hooker_file:close()
-
-	if not ok then
-		error(result)
-	end
-
-	if type(result) ~= "table" then
-		error("JSON has incorrect format")
-	end
-
-	return result
-end
-
 function M.setup(opts)
-	written_hooks = M.fetch_files()
+	M.sync_written_hooks()
 
 	if opts then
 		M.options = vim.tbl_deep_extend("force", default_options, opts)
