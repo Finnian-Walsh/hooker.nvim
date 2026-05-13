@@ -52,6 +52,14 @@ function M.sync_written_hooks()
 	written_hooks = result
 end
 
+function M.get_written_hooks()
+	if not written_hooks then
+		M.sync_written_hooks()
+	end
+
+	return written_hooks
+end
+
 function M.length()
 	return #written_hooks
 end
@@ -62,7 +70,7 @@ function M.select(index)
 	if vim.api.nvim_buf_is_valid(hooker_buffer) then
 		file_name = vim.api.nvim_buf_get_lines(hooker_buffer, index - 1, index, true)[1]
 	else
-		file_name = written_hooks[index]
+		file_name = M.get_written_hooks()[index]
 	end
 
 	if not file_name then
@@ -156,7 +164,7 @@ function M.save()
 		end
 	end
 
-	if list_shallow_equal(hooks, written_hooks) then
+	if list_shallow_equal(hooks, M.get_written_hooks()) then
 		return
 	end
 
@@ -181,8 +189,6 @@ function M.save()
 end
 
 function M.setup(opts)
-	M.sync_written_hooks()
-
 	if opts then
 		M.options = vim.tbl_deep_extend("force", default_options, opts)
 	else
