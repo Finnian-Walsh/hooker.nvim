@@ -61,7 +61,7 @@ function M.get_written_hooks()
 end
 
 function M.length()
-	return #written_hooks
+	return #M.get_written_hooks()
 end
 
 function M.select(index)
