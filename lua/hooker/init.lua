@@ -34,7 +34,8 @@ function M.sync_written_hooks()
 	local hooker_file = io.open(".hooker.json", "r")
 
 	if not hooker_file then
-		return {}
+		written_hooks = {}
+		return
 	end
 
 	local ok, result = pcall(vim.json.decode, hooker_file:read("*a"))
