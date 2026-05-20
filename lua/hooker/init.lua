@@ -3,6 +3,9 @@ local M = {}
 local written_hooks
 local hooker_buffer, hooker_win = -1, -1
 
+local HOOKER_FILE = ".hooker.mpack"
+local mpack = vim.mpack
+
 local separator = package.config:sub(1, 1)
 
 local default_options = {
@@ -31,14 +34,14 @@ function M.dump_data()
 end
 
 function M.sync_written_hooks()
-	local hooker_file = io.open(".hooker.json", "r")
+	local hooker_file = io.open(HOOKER_FILE, "r")
 
 	if not hooker_file then
 		written_hooks = {}
 		return
 	end
 
-	local ok, result = pcall(vim.json.decode, hooker_file:read("*a"))
+	local ok, result = pcall(mpack.decode, hooker_file:read("*a"))
 
 	hooker_file:close()
 
@@ -47,7 +50,7 @@ function M.sync_written_hooks()
 	end
 
 	if type(result) ~= "table" then
-		error("JSON has incorrect format")
+		error("Binary has incorrect format")
 	end
 
 	written_hooks = result
@@ -132,14 +135,35 @@ function M.menu()
 	end)
 end
 
-function M.add_current()
+function M.add_file()
 	local current_file_path = vim.fn.expand("%:p")
 	local relative_path = vim.fn.fnamemodify(current_file_path, ":.")
 	vim.fn.setreg('"', relative_path)
 	M.menu()
 end
 
-function M.save()
+function M.write_hooks(hooks)
+	local ok, result = pcall(mpack.encode, hooks)
+
+	if not ok then
+		vim.notify(result, vim.log.levels.ERROR)
+		return
+	end
+
+	local hooker_file = io.open(HOOKER_FILE, "w")
+
+	if not hooker_file then
+		vim.notify("Unable to open hooker file", vim.log.levels.ERROR)
+		return
+	end
+
+	hooker_file:write(result)
+	hooker_file:close()
+
+	written_hooks = hooks
+end
+
+function M.save_buffer()
 	local hooks = vim.api.nvim_buf_get_lines(hooker_buffer, 0, -1, true)
 
 	local trim_index = #hooks + 1
@@ -169,24 +193,7 @@ function M.save()
 		return
 	end
 
-	local ok, result = pcall(vim.json.encode, hooks)
-
-	if not ok then
-		vim.notify(result, vim.log.levels.ERROR)
-		return
-	end
-
-	local hooker_file = io.open(".hooker.json", "w")
-
-	if not hooker_file then
-		vim.notify("Unable to open hooker file", vim.log.levels.ERROR)
-		return
-	end
-
-	hooker_file:write(result)
-	hooker_file:close()
-
-	written_hooks = result
+	M.write_hooks(hooks)
 end
 
 function M.setup(opts)
@@ -199,7 +206,7 @@ function M.setup(opts)
 	vim.api.nvim_create_autocmd("BufLeave", {
 		callback = function(ev)
 			if ev.buf == hooker_buffer and vim.api.nvim_buf_is_valid(hooker_buffer) then
-				M.save()
+				M.save_buffer()
 				vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
 			end
 		end,
