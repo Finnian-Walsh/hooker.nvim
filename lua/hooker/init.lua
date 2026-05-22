@@ -8,12 +8,7 @@ local hooks_file_path
 local mpack = vim.mpack
 local separator = package.config:sub(1, 1)
 
-local default_options = {
-	lines = 8,
-	width = 0.6,
-	open_directory = vim.cmd.edit,
-	target_directory = vim.uv.cwd(),
-}
+local default_options = require("hooker.default_options")
 
 local function list_shallow_equal(a, b)
 	if #a ~= #b then
