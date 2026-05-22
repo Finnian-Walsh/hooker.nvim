@@ -2,16 +2,17 @@ local M = {}
 
 local written_hooks
 local hooker_buffer, hooker_win = -1, -1
+local hooks_directory = vim.fs.joinpath(vim.fn.stdpath("data"), "hooks")
+local hooks_file_path
 
-local HOOKER_FILE = ".hooker.mpack"
 local mpack = vim.mpack
-
 local separator = package.config:sub(1, 1)
 
 local default_options = {
 	lines = 8,
 	width = 0.6,
 	open_directory = vim.cmd.edit,
+	target_directory = vim.uv.cwd(),
 }
 
 local function list_shallow_equal(a, b)
@@ -28,13 +29,17 @@ local function list_shallow_equal(a, b)
 	return true
 end
 
+local function hooks_empty(hooks)
+	return #hooks == 0 or #hooks == 1 and hooks[1] == ""
+end
+
 function M.dump_data()
 	vim.print(written_hooks)
 	vim.print(hooker_buffer, hooker_win)
 end
 
 function M.sync_written_hooks()
-	local hooker_file = io.open(HOOKER_FILE, "r")
+	local hooker_file = io.open(hooks_file_path, "r")
 
 	if not hooker_file then
 		written_hooks = {}
@@ -143,6 +148,20 @@ function M.add_file()
 end
 
 function M.write_hooks(hooks)
+	if hooks_empty(hooks) then
+		if not vim.uv.fs_stat(hooks_file_path) then
+			return
+		end
+
+		local ok, err = pcall(vim.uv.fs_unlink, hooks_file_path)
+
+		if not ok then
+			vim.notify("Unable to update hooker file:\n" .. err, vim.log.levels.ERROR)
+		end
+
+		return
+	end
+
 	local ok, result = pcall(mpack.encode, hooks)
 
 	if not ok then
@@ -150,7 +169,8 @@ function M.write_hooks(hooks)
 		return
 	end
 
-	local hooker_file = io.open(HOOKER_FILE, "w")
+	vim.fn.mkdir(hooks_directory, "p")
+	local hooker_file = io.open(hooks_file_path, "w")
 
 	if not hooker_file then
 		vim.notify("Unable to open hooker file", vim.log.levels.ERROR)
@@ -196,12 +216,21 @@ function M.save_buffer()
 	M.write_hooks(hooks)
 end
 
+function M.set_hooks_file_path()
+	local stat = vim.uv.fs_stat(M.options.target_directory)
+	local birthtime = stat.birthtime
+	hooks_file_path =
+		vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
+end
+
 function M.setup(opts)
 	if opts then
 		M.options = vim.tbl_deep_extend("force", default_options, opts)
 	else
 		M.options = default_options
 	end
+
+	M.set_hooks_file_path()
 
 	vim.api.nvim_create_autocmd("BufLeave", {
 		callback = function(ev)
