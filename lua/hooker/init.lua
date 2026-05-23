@@ -10,6 +10,16 @@ local separator = package.config:sub(1, 1)
 
 local default_options = require("hooker.default_options")
 
+---@alias Hooks string[]
+
+---@class Options
+---@field lines integer
+---@field width number
+---@field open_directory function
+---@field target_directory string
+
+---@param a table
+---@param b table
 local function list_shallow_equal(a, b)
 	if #a ~= #b then
 		return false
@@ -24,6 +34,7 @@ local function list_shallow_equal(a, b)
 	return true
 end
 
+---@param hooks Hooks
 local function hooks_empty(hooks)
 	return #hooks == 0 or #hooks == 1 and hooks[1] == ""
 end
@@ -68,6 +79,7 @@ function M.length()
 	return #M.get_written_hooks()
 end
 
+---@param index integer
 function M.select(index)
 	local file_name
 
@@ -142,6 +154,7 @@ function M.add_file()
 	M.menu()
 end
 
+---@param hooks Hooks
 function M.write_hooks(hooks)
 	if hooks_empty(hooks) then
 		if not vim.uv.fs_stat(hooks_file_path) then
@@ -218,6 +231,7 @@ function M.set_hooks_file_path()
 		vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
 end
 
+---@param opts? Options
 function M.setup(opts)
 	if opts then
 		M.options = vim.tbl_deep_extend("force", default_options, opts)
