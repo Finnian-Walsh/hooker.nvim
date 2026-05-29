@@ -39,6 +39,13 @@ local function hooks_empty(hooks)
 	return #hooks == 0 or #hooks == 1 and hooks[1] == ""
 end
 
+local function set_hooks_file_path(directory)
+	local stat = vim.uv.fs_stat(directory)
+	local birthtime = stat.birthtime
+	hooks_file_path =
+		vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
+end
+
 function M.dump_data()
 	vim.print(written_hooks)
 	vim.print(hooker_buffer, hooker_win)
@@ -110,6 +117,7 @@ function M.menu()
 	local opts = M.options
 	local buf = vim.api.nvim_create_buf(false, true)
 
+	vim.bo[buf].filetype = "hooker"
 	vim.api.nvim_buf_set_lines(buf, 0, #written_hooks, false, written_hooks)
 
 	local width = math.floor(vim.o.columns * opts.width)
@@ -224,13 +232,6 @@ function M.save_buffer()
 	M.write_hooks(hooks)
 end
 
-function M.set_hooks_file_path()
-	local stat = vim.uv.fs_stat(M.options.target_directory)
-	local birthtime = stat.birthtime
-	hooks_file_path =
-		vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
-end
-
 ---@param opts? Options
 function M.setup(opts)
 	if opts then
@@ -239,7 +240,17 @@ function M.setup(opts)
 		M.options = default_options
 	end
 
-	M.set_hooks_file_path()
+	set_hooks_file_path(M.options.target_directory)
+
+	setmetatable(M.options, {
+		__newindex = function(_, key, value)
+			rawset(M, key, value)
+
+			if key == "target_directory" then
+				set_hooks_file_path(value)
+			end
+		end,
+	})
 
 	vim.api.nvim_create_autocmd("BufLeave", {
 		callback = function(ev)
