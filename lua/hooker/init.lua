@@ -21,245 +21,274 @@ local default_options = require("hooker.default_options")
 ---@param a table
 ---@param b table
 local function list_shallow_equal(a, b)
-	if #a ~= #b then
-		return false
-	end
+    if #a ~= #b then
+        return false
+    end
 
-	for i, val in pairs(a) do
-		if b[i] ~= val then
-			return false
-		end
-	end
+    for i, val in pairs(a) do
+        if b[i] ~= val then
+            return false
+        end
+    end
 
-	return true
+    return true
 end
 
 ---@param hooks Hooks
 local function hooks_empty(hooks)
-	return #hooks == 0 or #hooks == 1 and hooks[1] == ""
+    return #hooks == 0 or #hooks == 1 and hooks[1] == ""
 end
 
 local function set_hooks_file_path(directory)
-	local stat = vim.uv.fs_stat(directory)
-	local birthtime = stat.birthtime
-	hooks_file_path =
-		vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
+    local stat = vim.uv.fs_stat(directory)
+    local birthtime = stat.birthtime
+    hooks_file_path =
+        vim.fs.joinpath(hooks_directory, string.format("%d-%d.%d.mpack", stat.ino, birthtime.sec, birthtime.nsec))
 end
 
 function M.dump_data()
-	vim.print(written_hooks)
-	vim.print(hooker_buffer, hooker_win)
+    vim.print(written_hooks)
+    vim.print(hooker_buffer, hooker_win)
 end
 
 function M.sync_written_hooks()
-	local hooker_file = io.open(hooks_file_path, "r")
+    local hooker_file = io.open(hooks_file_path, "r")
 
-	if not hooker_file then
-		written_hooks = {}
-		return
-	end
+    if not hooker_file then
+        written_hooks = {}
+        return
+    end
 
-	local ok, result = pcall(mpack.decode, hooker_file:read("*a"))
+    local ok, result = pcall(mpack.decode, hooker_file:read("*a"))
 
-	hooker_file:close()
+    hooker_file:close()
 
-	if not ok then
-		error(result)
-	end
+    if not ok then
+        error(result)
+    end
 
-	if type(result) ~= "table" then
-		error("Binary has incorrect format")
-	end
+    if type(result) ~= "table" then
+        error("Binary has incorrect format")
+    end
 
-	written_hooks = result
+    written_hooks = result
 end
 
 function M.get_written_hooks()
-	if not written_hooks then
-		M.sync_written_hooks()
-	end
+    if not written_hooks then
+        M.sync_written_hooks()
+    end
 
-	return written_hooks
+    return written_hooks
 end
 
 function M.length()
-	return #M.get_written_hooks()
+    return #M.get_written_hooks()
 end
 
 ---@param index integer
 function M.select(index)
-	local file_name
+    local file_name
 
-	if vim.api.nvim_buf_is_valid(hooker_buffer) then
-		file_name = vim.api.nvim_buf_get_lines(hooker_buffer, index - 1, index, true)[1]
-	else
-		file_name = M.get_written_hooks()[index]
-	end
+    if vim.api.nvim_buf_is_valid(hooker_buffer) then
+        file_name = vim.api.nvim_buf_get_lines(hooker_buffer, index - 1, index, true)[1]
+    else
+        file_name = M.get_written_hooks()[index]
+    end
 
-	if not file_name then
-		vim.notify(string.format("No file name\nIndex: `%s`", index), vim.log.levels.WARNING)
-	end
+    if not file_name then
+        vim.notify(string.format("No file name\nIndex: `%s`", index), vim.log.levels.WARNING)
+    end
 
-	if file_name:sub(-1) == separator then
-		M.options.open_directory(file_name)
-	else
-		vim.cmd.edit(file_name)
-	end
+    if file_name:sub(-1) == separator then
+        M.options.open_directory(file_name)
+    else
+        vim.cmd.edit(file_name)
+    end
+end
+
+function M.calculate_window_geometry()
+    local opts = M.options
+
+    local width = math.floor(vim.o.columns * opts.width)
+    local height = math.min(vim.o.lines - 1, opts.lines)
+
+    return {
+        width = width,
+        height = height,
+
+        row = math.floor(math.max(0, vim.o.lines - height - vim.o.cmdheight - 1) / 2),
+        col = math.floor((vim.o.columns - width) / 2),
+    }
+end
+
+function M.reconfigure_win_checked()
+    if vim.api.nvim_win_is_valid(hooker_win) then
+        local geometry = M.calculate_window_geometry()
+        local config = vim.api.nvim_win_get_config(hooker_win)
+
+        local updated_config = vim.tbl_deep_extend("force", config, geometry)
+
+        if vim.deep_equal(updated_config, config) then
+            return
+        end
+
+        vim.api.nvim_win_set_config(hooker_win, updated_config)
+    end
 end
 
 function M.menu()
-	if vim.api.nvim_win_is_valid(hooker_win) then
-		vim.api.nvim_win_close(hooker_win)
-	end
+    if vim.api.nvim_win_is_valid(hooker_win) then
+        vim.api.nvim_win_close(hooker_win)
+    end
 
-	M.sync_written_hooks()
+    M.sync_written_hooks()
 
-	local opts = M.options
-	local buf = vim.api.nvim_create_buf(false, true)
+    local buf = vim.api.nvim_create_buf(false, true)
 
-	vim.bo[buf].filetype = "hooker"
-	vim.api.nvim_buf_set_lines(buf, 0, #written_hooks, false, written_hooks)
+    vim.bo[buf].filetype = "hooker"
+    vim.api.nvim_buf_set_lines(buf, 0, #written_hooks, false, written_hooks)
 
-	local width = math.floor(vim.o.columns * opts.width)
-	local height = math.min(vim.o.lines - 1, opts.lines)
+    local win = vim.api.nvim_open_win(
+        buf,
+        true,
+        vim.tbl_extend("keep", {
+            relative = "editor",
+            style = "minimal",
+            border = "rounded",
+            title = "Hooker",
+        }, M.calculate_window_geometry())
+    )
 
-	local row = math.floor(math.max(0, vim.o.lines - height - vim.o.cmdheight - 1) / 2)
-	local col = math.floor((vim.o.columns - width) / 2)
+    hooker_buffer = buf
+    hooker_win = win
 
-	local win = vim.api.nvim_open_win(buf, true, {
-		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = height,
-		style = "minimal",
-		border = "rounded",
-		title = "Hooker",
-	})
+    vim.opt.number = true
 
-	hooker_buffer = buf
-	hooker_win = win
+    local function close_window()
+        vim.api.nvim_win_close(win, true)
+    end
 
-	vim.opt.number = true
+    vim.keymap.set("n", "<Esc>", close_window, { buffer = buf, desc = "Close window" })
+    vim.keymap.set("n", "q", close_window, { buffer = buf, desc = "Close window" })
 
-	local function close_window()
-		vim.api.nvim_win_close(win, true)
-	end
-
-	vim.keymap.set("n", "<Esc>", close_window, { buffer = buf, desc = "Close window" })
-	vim.keymap.set("n", "q", close_window, { buffer = buf, desc = "Close window" })
-
-	vim.keymap.set("n", "<CR>", function()
-		local current_line = vim.api.nvim_win_get_cursor(win)[1]
-		M.select(current_line)
-	end)
+    vim.keymap.set("n", "<CR>", function()
+        local current_line = vim.api.nvim_win_get_cursor(win)[1]
+        M.select(current_line)
+    end)
 end
 
 function M.add_file()
-	local current_file_path = vim.fn.expand("%:p")
-	local relative_path = vim.fn.fnamemodify(current_file_path, ":.")
-	vim.fn.setreg('"', relative_path)
-	M.menu()
+    local current_file_path = vim.fn.expand("%:p")
+    local relative_path = vim.fn.fnamemodify(current_file_path, ":.")
+    vim.fn.setreg('"', relative_path)
+    M.menu()
 end
 
 ---@param hooks Hooks
 function M.write_hooks(hooks)
-	if hooks_empty(hooks) then
-		if not vim.uv.fs_stat(hooks_file_path) then
-			return
-		end
+    if hooks_empty(hooks) then
+        if not vim.uv.fs_stat(hooks_file_path) then
+            return
+        end
 
-		local ok, err = pcall(vim.uv.fs_unlink, hooks_file_path)
+        local ok, err = pcall(vim.uv.fs_unlink, hooks_file_path)
 
-		if not ok then
-			vim.notify("Unable to update hooker file:\n" .. err, vim.log.levels.ERROR)
-		end
+        if not ok then
+            vim.notify("Unable to update hooker file:\n" .. err, vim.log.levels.ERROR)
+        end
 
-		return
-	end
+        return
+    end
 
-	local ok, result = pcall(mpack.encode, hooks)
+    local ok, result = pcall(mpack.encode, hooks)
 
-	if not ok then
-		vim.notify(result, vim.log.levels.ERROR)
-		return
-	end
+    if not ok then
+        vim.notify(result, vim.log.levels.ERROR)
+        return
+    end
 
-	vim.fn.mkdir(hooks_directory, "p")
-	local hooker_file = io.open(hooks_file_path, "w")
+    vim.fn.mkdir(hooks_directory, "p")
+    local hooker_file = io.open(hooks_file_path, "w")
 
-	if not hooker_file then
-		vim.notify("Unable to open hooker file", vim.log.levels.ERROR)
-		return
-	end
+    if not hooker_file then
+        vim.notify("Unable to open hooker file", vim.log.levels.ERROR)
+        return
+    end
 
-	hooker_file:write(result)
-	hooker_file:close()
+    hooker_file:write(result)
+    hooker_file:close()
 
-	written_hooks = hooks
+    written_hooks = hooks
 end
 
 function M.save_buffer()
-	local hooks = vim.api.nvim_buf_get_lines(hooker_buffer, 0, -1, true)
+    local hooks = vim.api.nvim_buf_get_lines(hooker_buffer, 0, -1, true)
 
-	local trim_index = #hooks + 1
+    local trim_index = #hooks + 1
 
-	for i = #hooks, 1, -1 do
-		if #hooks[i] > 0 then
-			trim_index = i + 1
-			break
-		end
-	end
+    for i = #hooks, 1, -1 do
+        if #hooks[i] > 0 then
+            trim_index = i + 1
+            break
+        end
+    end
 
-	for i = trim_index, #hooks do
-		hooks[i] = nil
-	end
+    for i = trim_index, #hooks do
+        hooks[i] = nil
+    end
 
-	for i, hook in ipairs(hooks) do
-		if hook:sub(-1) ~= separator then
-			local file_data = vim.uv.fs_stat(hook)
+    for i, hook in ipairs(hooks) do
+        if hook:sub(-1) ~= separator then
+            local file_data = vim.uv.fs_stat(hook)
 
-			if file_data and file_data.type == "directory" then
-				hooks[i] = hook .. separator
-			end
-		end
-	end
+            if file_data and file_data.type == "directory" then
+                hooks[i] = hook .. separator
+            end
+        end
+    end
 
-	if list_shallow_equal(hooks, M.get_written_hooks()) then
-		return
-	end
+    if list_shallow_equal(hooks, M.get_written_hooks()) then
+        return
+    end
 
-	M.write_hooks(hooks)
+    M.write_hooks(hooks)
 end
 
 ---@param opts? Options
 function M.setup(opts)
-	if opts then
-		M.options = vim.tbl_deep_extend("force", default_options, opts)
-	else
-		M.options = default_options
-	end
+    if opts then
+        M.options = vim.tbl_deep_extend("force", default_options, opts)
+    else
+        M.options = default_options
+    end
 
-	set_hooks_file_path(M.options.target_directory)
+    set_hooks_file_path(M.options.target_directory)
 
-	setmetatable(M.options, {
-		__newindex = function(_, key, value)
-			rawset(M, key, value)
+    setmetatable(M.options, {
+        __newindex = function(_, key, value)
+            rawset(M, key, value)
 
-			if key == "target_directory" then
-				set_hooks_file_path(value)
-			end
-		end,
-	})
+            if key == "target_directory" then
+                set_hooks_file_path(value)
+            elseif key == "lines" or key == "width" then
+                M.reconfigure_win_checked()
+            end
+        end,
+    })
 
-	vim.api.nvim_create_autocmd("BufLeave", {
-		callback = function(ev)
-			if ev.buf == hooker_buffer and vim.api.nvim_buf_is_valid(hooker_buffer) then
-				M.save_buffer()
-				vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
-			end
-		end,
-	})
+    vim.api.nvim_create_autocmd("BufLeave", {
+        callback = function(ev)
+            if ev.buf == hooker_buffer and vim.api.nvim_buf_is_valid(hooker_buffer) then
+                M.save_buffer()
+                vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
+            end
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("VimResized", {
+        callback = M.reconfigure_win_checked,
+    })
 end
 
 return M
