@@ -7,12 +7,12 @@ local M = setmetatable({}, {
 })
 
 function M.check()
-    local uname_obj = vim.system{"uname"}:wait()
+    local uname_obj = vim.system({ "uname" }):wait()
 
     if uname_obj.code ~= 0 then
-        M.warn("Support for non Unix-based systems is limited")
+        M.error("Only Unix-based systems are supported")
     else
-        M.ok("A Unix-based operating system is in use! The plugin will function correctly")
+        M.ok("Your system is using a Unix-based operating system")
     end
 end
 
